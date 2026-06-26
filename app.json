@@ -1,0 +1,38 @@
+{
+  "expo": {
+    "name": "EODEPos",
+    "slug": "EODEPos",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#E6F4FE",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      }
+    },
+    "web": {
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro",
+      "output": "single",
+      "name": "EODE POS",
+      "shortName": "EODE POS",
+      "description": "Point-of-sale and inventory management for EODE stores",
+      "themeColor": "#1B2A6B",
+      "backgroundColor": "#F5F8FC",
+      "lang": "en",
+      "scope": "/",
+      "startUrl": "/"
+    },
+    "plugins": [
+      "expo-secure-store",
+      "expo-sharing"
+    ]
+  }
+}
