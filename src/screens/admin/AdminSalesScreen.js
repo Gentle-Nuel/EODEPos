@@ -7,6 +7,7 @@ import {
   StyleSheet,
   ActivityIndicator,
   RefreshControl,
+  Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -74,7 +75,10 @@ export default function AdminSalesScreen({ navigation }) {
   const [loading, setLoading]       = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError]           = useState(null);
-  const [filter, setFilter]         = useState('today');
+  const [filter, setFilter]           = useState('today');
+  const [pendingDeleteSale, setPendingDeleteSale] = useState(null);
+  const [deletingSale, setDeletingSale]           = useState(false);
+  const [deleteError, setDeleteError]             = useState(null);
 
   // ── Fetch ──────────────────────────────────────────────────────────────────
 
@@ -122,6 +126,27 @@ export default function AdminSalesScreen({ navigation }) {
   }, [filter]);
 
   useEffect(() => { fetchSales(); }, [fetchSales]);
+
+  // ── Delete sale ────────────────────────────────────────────────────────────
+
+  const handleDeleteSale = useCallback(async () => {
+    if (!pendingDeleteSale) return;
+    setDeletingSale(true);
+    setDeleteError(null);
+    try {
+      const { error: err } = await supabase
+        .from('sales')
+        .delete()
+        .eq('id', pendingDeleteSale.id);
+      if (err) throw err;
+      setSales(prev => prev.filter(s => s.id !== pendingDeleteSale.id));
+      setPendingDeleteSale(null);
+    } catch (err) {
+      setDeleteError(err.message ?? 'Could not delete sale.');
+    } finally {
+      setDeletingSale(false);
+    }
+  }, [pendingDeleteSale]);
 
   // ── Open receipt ───────────────────────────────────────────────────────────
 
@@ -277,7 +302,11 @@ export default function AdminSalesScreen({ navigation }) {
           renderItem={({ item }) =>
             item.type === 'header'
               ? <DateHeader date={item.date} />
-              : <SaleCard sale={item} onPress={() => openReceipt(item)} />
+              : <SaleCard
+                  sale={item}
+                  onPress={() => openReceipt(item)}
+                  onDeletePress={setPendingDeleteSale}
+                />
           }
           refreshControl={
             <RefreshControl
@@ -290,6 +319,64 @@ export default function AdminSalesScreen({ navigation }) {
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
         />
+      )}
+
+      {/* ── Delete sale confirmation modal ── */}
+      {pendingDeleteSale && (
+        <Modal
+          visible
+          transparent
+          animationType="fade"
+          onRequestClose={() => { if (!deletingSale) setPendingDeleteSale(null); }}
+        >
+          <View style={styles.deleteOverlay}>
+            <View style={styles.deleteModal}>
+              <View style={styles.deleteModalIcon}>
+                <Ionicons name="trash-outline" size={24} color="#B91C1C" />
+              </View>
+              <Text style={styles.deleteModalTitle}>Delete Sale?</Text>
+              <Text style={styles.deleteModalReceipt}>
+                {'Receipt #' + String(pendingDeleteSale.receipt_number).padStart(4, '0')}
+                {' · '}
+                {pendingDeleteSale.profiles?.full_name ?? 'Attendant'}
+              </Text>
+              <Text style={styles.deleteModalAmount}>
+                {fmt(pendingDeleteSale.total_amount)}
+                {' · '}
+                {new Date(pendingDeleteSale.created_at).toLocaleString('en-NG', {
+                  day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true,
+                })}
+              </Text>
+              <Text style={styles.deleteModalWarning}>
+                Stock quantities will be restored automatically. This cannot be undone.
+              </Text>
+              {deleteError && (
+                <Text style={styles.deleteModalError}>{deleteError}</Text>
+              )}
+              <View style={styles.deleteModalActions}>
+                <TouchableOpacity
+                  style={styles.deleteModalCancel}
+                  onPress={() => { setPendingDeleteSale(null); setDeleteError(null); }}
+                  disabled={deletingSale}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.deleteModalCancelText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.deleteModalConfirm, deletingSale && { opacity: 0.6 }]}
+                  onPress={handleDeleteSale}
+                  disabled={deletingSale}
+                  activeOpacity={0.85}
+                >
+                  {deletingSale
+                    ? <ActivityIndicator size="small" color={Colors.white} />
+                    : <Text style={styles.deleteModalConfirmText}>Delete Sale</Text>
+                  }
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
       )}
 
     </SafeAreaView>
@@ -306,7 +393,7 @@ function DateHeader({ date }) {
   );
 }
 
-function SaleCard({ sale, onPress }) {
+function SaleCard({ sale, onPress, onDeletePress }) {
   const itemCount  = sale.sale_items?.length ?? 0;
   const hasSplit   = !!sale.payment_method_2;
   const attendant  = sale.profiles?.full_name ?? 'Unknown';
@@ -335,12 +422,16 @@ function SaleCard({ sale, onPress }) {
 
       <View style={styles.saleRight}>
         <Text style={styles.saleTotal}>{fmt(sale.total_amount)}</Text>
-        <Ionicons
-          name="chevron-forward"
-          size={14}
-          color={Colors.secondaryText}
-          style={{ marginTop: 4 }}
-        />
+        <View style={styles.saleRightBottom}>
+          <Ionicons name="chevron-forward" size={14} color={Colors.secondaryText} />
+          <TouchableOpacity
+            onPress={() => onDeletePress(sale)}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            style={styles.saleTrashBtn}
+          >
+            <Ionicons name="trash-outline" size={13} color="#B91C1C" />
+          </TouchableOpacity>
+        </View>
       </View>
     </TouchableOpacity>
   );
@@ -473,8 +564,10 @@ const styles = StyleSheet.create({
   },
   chipText: { fontSize: 10, fontWeight: '600', color: Colors.navy },
 
-  saleRight: { alignItems: 'flex-end', flexShrink: 0 },
-  saleTotal: { fontSize: 15, fontWeight: '800', color: Colors.navy },
+  saleRight:       { alignItems: 'flex-end', flexShrink: 0 },
+  saleRightBottom: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 },
+  saleTrashBtn:    { padding: 2 },
+  saleTotal:       { fontSize: 15, fontWeight: '800', color: Colors.navy },
 
   // ── Empty / error / loading ──
   centered:     { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10, padding: 32 },
@@ -488,4 +581,71 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.navy,
   },
   retryText: { fontSize: 13, fontWeight: '700', color: Colors.white },
+
+  // ── Delete sale modal ──
+  deleteOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+  },
+  deleteModal: {
+    backgroundColor: Colors.white,
+    borderRadius: 18,
+    padding: 24,
+    width: '100%',
+    maxWidth: 360,
+    alignItems: 'center',
+    gap: 8,
+  },
+  deleteModalIcon: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: '#FEE2E2',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 4,
+  },
+  deleteModalTitle:       { fontSize: 17, fontWeight: '800', color: Colors.navy },
+  deleteModalReceipt:     { fontSize: 13, fontWeight: '600', color: Colors.navy },
+  deleteModalAmount:      { fontSize: 12, color: Colors.secondaryText },
+  deleteModalWarning: {
+    fontSize: 12,
+    color: Colors.secondaryText,
+    textAlign: 'center',
+    lineHeight: 18,
+    marginTop: 4,
+  },
+  deleteModalError: {
+    fontSize: 12,
+    color: '#B91C1C',
+    textAlign: 'center',
+    fontWeight: '500',
+  },
+  deleteModalActions: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 8,
+    width: '100%',
+  },
+  deleteModalCancel: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderRadius: 10,
+    backgroundColor: Colors.inputBackground,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  deleteModalCancelText:  { fontSize: 14, fontWeight: '600', color: Colors.secondaryText },
+  deleteModalConfirm: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderRadius: 10,
+    backgroundColor: '#C0392B',
+  },
+  deleteModalConfirmText: { fontSize: 14, fontWeight: '700', color: Colors.white },
 });

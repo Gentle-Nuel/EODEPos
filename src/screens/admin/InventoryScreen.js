@@ -37,6 +37,7 @@ const EMPTY_FORM = {
   units_per_carton:    '',
   carton_price:        '',
   allow_half:          false,
+  price_group:         '',
 };
 
 function toForm(product) {
@@ -50,6 +51,7 @@ function toForm(product) {
     units_per_carton:    product.units_per_carton ? String(product.units_per_carton) : '',
     carton_price:        product.carton_price ? String(product.carton_price) : '',
     allow_half:          product.allow_half ?? false,
+    price_group:         product.price_group ?? '',
   };
 }
 
@@ -91,7 +93,7 @@ export default function InventoryScreen() {
     try {
       const { data, error: err } = await supabase
         .from('products')
-        .select('id, name, price, stock_quantity, low_stock_threshold, unit_description, image_url, units_per_carton, carton_price, allow_half')
+        .select('id, name, price, stock_quantity, low_stock_threshold, unit_description, image_url, units_per_carton, carton_price, allow_half, price_group')
         .order('name', { ascending: true });
       if (err) throw err;
       setProducts(data ?? []);
@@ -129,6 +131,19 @@ export default function InventoryScreen() {
   const setField = useCallback((key, val) => {
     setForm(prev => ({ ...prev, [key]: val }));
   }, []);
+
+  const handlePriceGroupChange = useCallback((v) => {
+    const tag = v.trim().toLowerCase();
+    const match = products.find(p => p.price_group === tag);
+    setForm(prev => ({
+      ...prev,
+      price_group: v,
+      ...(match ? {
+        price:        String(match.price),
+        carton_price: match.carton_price ? String(match.carton_price) : prev.carton_price,
+      } : {}),
+    }));
+  }, [products]);
 
   // ── Image picker & upload ──────────────────────────────────────────────────
 
@@ -219,6 +234,7 @@ export default function InventoryScreen() {
       units_per_carton:    upc,
       carton_price:        upc && form.carton_price ? parseFloat(form.carton_price) : null,
       allow_half:          form.allow_half,
+      price_group:         form.price_group.trim().toLowerCase() || null,
     };
 
     setSaving(true);
@@ -230,17 +246,22 @@ export default function InventoryScreen() {
           .update(payload)
           .eq('id', editTarget.id);
         if (err) throw err;
-        setProducts(prev =>
-          prev
-            .map(p => p.id === editTarget.id ? { ...p, ...payload } : p)
-            .sort((a, b) => a.name.localeCompare(b.name)),
-        );
+        if (payload.price_group) {
+          // Re-fetch so the DB price-group trigger's updates are reflected locally
+          await fetchProducts();
+        } else {
+          setProducts(prev =>
+            prev
+              .map(p => p.id === editTarget.id ? { ...p, ...payload } : p)
+              .sort((a, b) => a.name.localeCompare(b.name)),
+          );
+        }
       } else {
         // Insert new
         const { data, error: err } = await supabase
           .from('products')
           .insert(payload)
-          .select('id, name, price, stock_quantity, low_stock_threshold, unit_description, image_url, units_per_carton, carton_price, allow_half')
+          .select('id, name, price, stock_quantity, low_stock_threshold, unit_description, image_url, units_per_carton, carton_price, allow_half, price_group')
           .single();
         if (err) throw err;
         setProducts(prev =>
@@ -309,6 +330,12 @@ export default function InventoryScreen() {
             {isOut && (
               <View style={styles.outBadge}>
                 <Text style={styles.outBadgeText}>Out</Text>
+              </View>
+            )}
+            {!!p.price_group && (
+              <View style={styles.groupBadge}>
+                <Ionicons name="pricetag-outline" size={9} color="#6D28D9" />
+                <Text style={styles.groupBadgeText}>{p.price_group}</Text>
               </View>
             )}
           </View>
@@ -518,6 +545,35 @@ export default function InventoryScreen() {
                 <Text style={styles.fieldHint}>
                   Show "Low" badge when stock falls to this number
                 </Text>
+              </Field>
+
+              {/* ── Price group ── */}
+              <View style={styles.sectionDivider} />
+              <Text style={styles.sectionLabel}>PRICE GROUP (OPTIONAL)</Text>
+
+              <Field label="Group Tag">
+                <TextInput
+                  style={styles.input}
+                  placeholder="e.g. pepsi  or  coke"
+                  placeholderTextColor={Colors.secondaryText}
+                  value={form.price_group}
+                  onChangeText={handlePriceGroupChange}
+                  autoCapitalize="none"
+                  returnKeyType="next"
+                />
+                {(() => {
+                  const tag = form.price_group.trim().toLowerCase();
+                  const match = tag ? products.find(p => p.price_group === tag) : null;
+                  return match ? (
+                    <Text style={[styles.fieldHint, { color: '#6D28D9' }]}>
+                      Auto-filled from existing "{tag}" group — ₦{Number(match.price).toLocaleString('en-NG')}
+                    </Text>
+                  ) : (
+                    <Text style={styles.fieldHint}>
+                      Products sharing the same tag automatically get the same price when you update any one of them.
+                    </Text>
+                  );
+                })()}
               </Field>
 
               {/* ── Carton mode ── */}
@@ -744,6 +800,18 @@ const styles = StyleSheet.create({
     borderColor: '#FCA5A5',
   },
   outBadgeText: { fontSize: 10, fontWeight: '700', color: '#B91C1C' },
+  groupBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: '#EDE9FE',
+    borderRadius: 4,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderWidth: 1,
+    borderColor: '#C4B5FD',
+  },
+  groupBadgeText: { fontSize: 10, fontWeight: '600', color: '#6D28D9' },
   cardRight:  { alignItems: 'flex-end', gap: 4, flexShrink: 0 },
   cardPrice:  { fontSize: 14, fontWeight: '700', color: Colors.navy },
 

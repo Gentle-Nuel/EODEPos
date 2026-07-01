@@ -43,6 +43,7 @@ CREATE TABLE products (
   units_per_carton    INTEGER,       -- NULL = no carton option
   carton_price        NUMERIC(12, 2),
   allow_half          BOOLEAN        NOT NULL DEFAULT FALSE,
+  price_group         TEXT,                    -- NULL = no group; same tag = shared price
   created_at          TIMESTAMPTZ    NOT NULL DEFAULT NOW()
 );
 
@@ -112,6 +113,7 @@ CREATE INDEX idx_deliveries_product_id ON deliveries(product_id);
 CREATE INDEX idx_deliveries_logged_by  ON deliveries(logged_by);
 CREATE INDEX idx_deliveries_status     ON deliveries(status);
 CREATE INDEX idx_products_name         ON products(name);
+CREATE INDEX idx_products_price_group  ON products(price_group);
 
 
 -- ============================================================
@@ -191,6 +193,47 @@ CREATE TRIGGER on_delivery_approved
   FOR EACH ROW EXECUTE FUNCTION increment_stock_on_delivery_approval();
 
 
+-- T4: Restore product stock when a sale_item is deleted (cascade from sale delete).
+CREATE OR REPLACE FUNCTION restore_stock_on_sale_item_delete()
+RETURNS TRIGGER AS $$
+BEGIN
+  UPDATE products
+  SET stock_quantity = stock_quantity + OLD.units_deducted
+  WHERE id = OLD.product_id;
+  RETURN OLD;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+CREATE TRIGGER on_sale_item_deleted
+  BEFORE DELETE ON sale_items
+  FOR EACH ROW EXECUTE FUNCTION restore_stock_on_sale_item_delete();
+
+
+-- T5: When price or carton_price changes on a product in a group,
+--     push the same prices to all other products in that group.
+CREATE OR REPLACE FUNCTION sync_price_group()
+RETURNS TRIGGER AS $$
+BEGIN
+  IF NEW.price_group IS NOT NULL AND (
+    NEW.price        IS DISTINCT FROM OLD.price OR
+    NEW.carton_price IS DISTINCT FROM OLD.carton_price
+  ) THEN
+    UPDATE products
+    SET
+      price        = NEW.price,
+      carton_price = NEW.carton_price
+    WHERE price_group = NEW.price_group
+      AND id          <> NEW.id;
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+CREATE TRIGGER on_product_price_group_change
+  AFTER UPDATE OF price, carton_price ON products
+  FOR EACH ROW EXECUTE FUNCTION sync_price_group();
+
+
 -- ============================================================
 -- ROW LEVEL SECURITY (RLS)
 -- ============================================================
@@ -234,7 +277,7 @@ CREATE POLICY "products: admin delete"
   ON products FOR DELETE USING (is_admin());
 
 -- sales ----------------------------------------------------------
--- Attendants insert/read own; admins read all
+-- Attendants insert/read own; admins read all and delete
 CREATE POLICY "sales: attendant insert own"
   ON sales FOR INSERT WITH CHECK (attendant_id = auth.uid());
 
@@ -243,6 +286,9 @@ CREATE POLICY "sales: attendant read own"
 
 CREATE POLICY "sales: admin read all"
   ON sales FOR SELECT USING (is_admin());
+
+CREATE POLICY "sales: admin delete"
+  ON sales FOR DELETE USING (is_admin());
 
 -- sale_items -----------------------------------------------------
 -- Attendant can insert items for sales they own;

@@ -103,7 +103,7 @@ function ActionBtn({ icon, label, onPress, disabled }) {
 
 // ─── HTML generator (for print / PDF) ────────────────────────────────────────
 
-function generateHTML({ receiptNumber, formattedDate, attendantName, items, subtotal, total, payments, logoUri, businessName, tagline, address, phone }) {
+function generateHTML({ receiptNumber, formattedDate, attendantName, items, subtotal, total, payments, logoUri, businessName, tagline, address, phone, email }) {
   const itemRows = items
     .map(i => {
       const showUnitPrice = (i.qty % 1 !== 0) && (i.sellType ?? 'unit') !== 'carton';
@@ -196,8 +196,9 @@ function generateHTML({ receiptNumber, formattedDate, attendantName, items, subt
     ${logoUri ? `<img class="logo-img" src="${logoUri}" alt="Logo" />` : '<div style="width:60px;height:60px;border-radius:30px;background:#1B2A6B;display:inline-block;"></div>'}
     <div class="biz-name">${businessName}</div>
     ${tagline  ? `<div class="tagline">${tagline}</div>`           : ''}
-    ${address  ? `<div class="store-detail">${address}</div>`      : ''}
-    ${phone    ? `<div class="store-detail">Tel: ${phone}</div>`   : ''}
+    ${address  ? `<div class="store-detail">${address}</div>`           : ''}
+    ${phone    ? `<div class="store-detail">Tel: ${phone}</div>`        : ''}
+    ${email    ? `<div class="store-detail">Email: ${email}</div>`      : ''}
   </div>
 
   <div class="dashed"></div>
@@ -301,7 +302,7 @@ export default function ReceiptScreen({ navigation, route }) {
 
     supabase
       .from('settings')
-      .select('business_name, tagline, address, phone')
+      .select('business_name, tagline, address, phone, email')
       .eq('id', 'store')
       .maybeSingle()
       .then(({ data }) => {
@@ -323,6 +324,7 @@ export default function ReceiptScreen({ navigation, route }) {
       tagline:      storeSettings?.tagline        || FALLBACK_TAG,
       address:      storeSettings?.address        ?? '',
       phone:        storeSettings?.phone          ?? '',
+      email:        storeSettings?.email          ?? '',
     }),
   [receiptNumber, timestamp, attendantName, items, subtotal, total, payments, logoUri, storeSettings]);
 
@@ -457,6 +459,9 @@ export default function ReceiptScreen({ navigation, route }) {
             )}
             {!!storeSettings?.phone && (
               <Text style={styles.storeDetail}>Tel: {storeSettings.phone}</Text>
+            )}
+            {!!storeSettings?.email && (
+              <Text style={styles.storeDetail}>{storeSettings.email}</Text>
             )}
           </View>
 

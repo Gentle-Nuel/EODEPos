@@ -1,5 +1,6 @@
 {
   "buildCommand": "npm run export:web",
   "outputDirectory": "dist",
-  "framework": null
+  "framework": null,
+  "alias": ["eode-pos.vercel.app"]
 }
