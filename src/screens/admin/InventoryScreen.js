@@ -74,6 +74,7 @@ export default function InventoryScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError]           = useState(null);
   const [search, setSearch]         = useState('');
+  const [stockFilter, setStockFilter] = useState('all'); // 'all' | 'low' | 'out'
 
   // Modal state
   const [modalVisible, setModalVisible]       = useState(false);
@@ -298,10 +299,25 @@ export default function InventoryScreen() {
 
   // ── Search filter ──────────────────────────────────────────────────────────
 
+  const lowCount = useMemo(
+    () => products.filter(p => p.stock_quantity > 0 && p.stock_quantity <= p.low_stock_threshold).length,
+    [products],
+  );
+  const outCount = useMemo(
+    () => products.filter(p => p.stock_quantity <= 0).length,
+    [products],
+  );
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return q ? products.filter(p => p.name.toLowerCase().includes(q)) : products;
-  }, [products, search]);
+    let list = q ? products.filter(p => p.name.toLowerCase().includes(q)) : products;
+    if (stockFilter === 'low') {
+      list = list.filter(p => p.stock_quantity > 0 && p.stock_quantity <= p.low_stock_threshold);
+    } else if (stockFilter === 'out') {
+      list = list.filter(p => p.stock_quantity <= 0);
+    }
+    return list;
+  }, [products, search, stockFilter]);
 
   // ── Render item ────────────────────────────────────────────────────────────
 
@@ -380,6 +396,35 @@ export default function InventoryScreen() {
             </TouchableOpacity>
           )}
         </View>
+        <View style={styles.filterRow}>
+          <TouchableOpacity
+            style={[styles.filterChip, stockFilter === 'all' && styles.filterChipActive]}
+            onPress={() => setStockFilter('all')}
+            activeOpacity={0.8}
+          >
+            <Text style={[styles.filterChipText, stockFilter === 'all' && styles.filterChipTextActive]}>
+              All
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.filterChip, styles.filterChipLow, stockFilter === 'low' && styles.filterChipLowActive]}
+            onPress={() => setStockFilter(prev => (prev === 'low' ? 'all' : 'low'))}
+            activeOpacity={0.8}
+          >
+            <Text style={[styles.filterChipLowText, stockFilter === 'low' && styles.filterChipLowTextActive]}>
+              Low ({lowCount})
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.filterChip, styles.filterChipOut, stockFilter === 'out' && styles.filterChipOutActive]}
+            onPress={() => setStockFilter(prev => (prev === 'out' ? 'all' : 'out'))}
+            activeOpacity={0.8}
+          >
+            <Text style={[styles.filterChipOutText, stockFilter === 'out' && styles.filterChipOutTextActive]}>
+              Out ({outCount})
+            </Text>
+          </TouchableOpacity>
+        </View>
         <Text style={styles.countLabel}>
           {filtered.length} {filtered.length === 1 ? 'product' : 'products'}
         </Text>
@@ -402,9 +447,15 @@ export default function InventoryScreen() {
         <View style={styles.centered}>
           <Ionicons name="layers-outline" size={52} color={Colors.border} />
           <Text style={styles.centeredText}>
-            {search ? `No products match "${search}"` : 'No products yet'}
+            {search
+              ? `No products match "${search}"`
+              : stockFilter === 'low'
+              ? 'No products are low on stock'
+              : stockFilter === 'out'
+              ? 'No products are out of stock'
+              : 'No products yet'}
           </Text>
-          {!search && (
+          {!search && stockFilter === 'all' && (
             <TouchableOpacity style={styles.retryBtn} onPress={openAdd}>
               <Text style={styles.retryText}>Add first product</Text>
             </TouchableOpacity>
@@ -765,6 +816,32 @@ const styles = StyleSheet.create({
   },
   searchInput: { flex: 1, fontSize: 14, color: Colors.navy, padding: 0 },
   countLabel:  { fontSize: 11, color: Colors.secondaryText, fontWeight: '500' },
+
+  filterRow: { flexDirection: 'row', gap: 8 },
+  filterChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    backgroundColor: Colors.inputBackground,
+  },
+  filterChipActive: {
+    backgroundColor: Colors.navy,
+    borderColor: Colors.navy,
+  },
+  filterChipText: { fontSize: 12, fontWeight: '700', color: Colors.secondaryText },
+  filterChipTextActive: { color: Colors.white },
+
+  filterChipLow: { backgroundColor: '#FEF3C7', borderColor: '#F59E0B' },
+  filterChipLowActive: { backgroundColor: '#F59E0B', borderColor: '#F59E0B' },
+  filterChipLowText: { fontSize: 12, fontWeight: '700', color: '#92400E' },
+  filterChipLowTextActive: { color: Colors.white },
+
+  filterChipOut: { backgroundColor: '#FEE2E2', borderColor: '#FCA5A5' },
+  filterChipOutActive: { backgroundColor: '#C0392B', borderColor: '#C0392B' },
+  filterChipOutText: { fontSize: 12, fontWeight: '700', color: '#B91C1C' },
+  filterChipOutTextActive: { color: Colors.white },
 
   listContent: { padding: 16, paddingBottom: 32, gap: 8 },
 
