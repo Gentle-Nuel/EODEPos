@@ -62,23 +62,36 @@ Deno.serve(async (req: Request) => {
       auth: { persistSession: false, autoRefreshToken: false },
     })
 
-    // Delete profile row first (removes FK reference to auth.users)
-    const { error: profileDeleteError } = await adminClient
-      .from('profiles')
-      .delete()
-      .eq('id', userId)
+    // NOTE: We deliberately do NOT hard-delete the profiles row or the auth
+    // user. profiles.id is referenced by sales.attendant_id and
+    // deliveries.logged_by with ON DELETE RESTRICT, so a hard delete fails
+    // with a foreign-key violation the instant an attendant has logged a
+    // single sale or delivery — which is effectively always, in practice.
+    //
+    // Instead we soft-delete: ban the auth user (blocks login/token refresh)
+    // and flag the profile inactive (hides them from the attendant list).
+    // Past sales/deliveries keep their attendant_id intact.
 
-    if (profileDeleteError) {
-      return new Response(JSON.stringify({ error: profileDeleteError.message }), {
+    const { error: banError } = await adminClient.auth.admin.updateUserById(userId, {
+      ban_duration: '876000h', // ~100 years — effectively permanent
+    })
+
+    if (banError) {
+      return new Response(JSON.stringify({ error: banError.message }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
     }
 
-    // Delete the auth user
-    const { error: deleteError } = await adminClient.auth.admin.deleteUser(userId)
-    if (deleteError) {
-      return new Response(JSON.stringify({ error: deleteError.message }), {
+    const { error: deactivateError } = await adminClient
+      .from('profiles')
+      .update({ is_active: false })
+      .eq('id', userId)
+
+    if (deactivateError) {
+      // Login is already revoked at this point; surface the error but don't
+      // leave the caller thinking nothing happened.
+      return new Response(JSON.stringify({ error: deactivateError.message }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })

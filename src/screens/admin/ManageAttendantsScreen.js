@@ -109,6 +109,7 @@ export default function ManageAttendantsScreen({ navigation }) {
         .from('profiles')
         .select('id, full_name, email, created_at')
         .eq('role', 'attendant')
+        .eq('is_active', true)
         .order('full_name');
 
       if (pErr) throw pErr;
