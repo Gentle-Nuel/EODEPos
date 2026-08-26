@@ -42,6 +42,9 @@ yarn-error.*
 
 .vercel
 
+# Supabase CLI local cache
+supabase/.temp/
+
 # AI agent files
 .claude/
 AGENTS.md
