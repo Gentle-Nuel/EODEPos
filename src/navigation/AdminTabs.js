@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { AppState } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../constants/colors';
@@ -13,6 +14,7 @@ const Tab = createBottomTabNavigator();
 
 export default function AdminTabs() {
   const [pendingCount, setPendingCount] = useState(0);
+  const insets = useSafeAreaInsets();
 
   const fetchPending = useCallback(async () => {
     try {
@@ -46,8 +48,8 @@ export default function AdminTabs() {
           backgroundColor: Colors.navy,
           borderTopColor: 'rgba(255,255,255,0.1)',
           borderTopWidth: 1,
-          height: 72,
-          paddingBottom: 16,
+          height: 56 + insets.bottom,
+          paddingBottom: Math.max(insets.bottom, 8),
           paddingTop: 6,
         },
         tabBarLabelStyle: {
